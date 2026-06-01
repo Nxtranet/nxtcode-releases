@@ -1,7 +1,7 @@
 # NxtCode public release workflow.
 #
 # Builds, signs, and notarizes the NxtCode macOS pkg from the PRIVATE source
-# repo (nxtranet/myRemoteAI) and publishes it as a GitHub Release on THIS
+# repo (fkerkinni1/claude-pac) and publishes it as a GitHub Release on THIS
 # public repo (nxtranet/nxtcode-releases).
 #
 # Triggers:
@@ -56,7 +56,7 @@ jobs:
       - name: Checkout private source repo
         uses: actions/checkout@v4
         with:
-          repository: nxtranet/myRemoteAI
+          repository: fkerkinni1/claude-pac
           token: ${{ secrets.SOURCE_REPO_PAT }}
           path: source
           fetch-depth: 1

@@ -23,12 +23,12 @@ For each secret below, run the `gh secret set` command shown. Always pass `--rep
 
 ### SOURCE_REPO_PAT
 
-Fine-grained PAT with **Contents: Read-only** on `nxtranet/myRemoteAI`. The release workflow uses it to clone the private source.
+Fine-grained PAT with **Contents: Read-only** on `fkerkinni1/claude-pac`. The release workflow uses it to clone the private source.
 
 1. Open https://github.com/settings/personal-access-tokens/new
 2. Token name: `nxtcode-releases-ci`
-3. Resource owner: `nxtranet`
-4. Repository access: Only select repositories → `nxtranet/myRemoteAI`
+3. Resource owner: `fkerkinni1` (your personal account — the source repo lives there, not in the Nxtranet org)
+4. Repository access: Only select repositories → `fkerkinni1/claude-pac`
 5. Permissions → Repository: Contents → Read-only
 6. Expiration: 1 year, set a calendar reminder
 7. Generate → copy token (one-shot view)
@@ -162,4 +162,4 @@ bash <(curl -fsSL https://mobilecoder.app/nxtcode/install.sh)
 - **"notarization failed"** → `xcrun notarytool log <submission-id> --keychain-profile notarytool-claudepac` from a workflow shell step, or download the log artifact.
 - **"no signing identity found"** → the .p12 import step failed. Check that base64 didn't get newline-wrapped on paste — pbcopy should produce a single long string.
 - **"gh release already exists"** → the workflow uses `--clobber` for re-runs, but a tag re-run with different content rewrites assets. Delete first if you need a clean state: `gh release delete v0.1.58 --yes`.
-- **Source repo PAT 401** → expired or scoped wrong. Regenerate with **Contents: Read** on `nxtranet/myRemoteAI` only.
+- **Source repo PAT 401** → expired or scoped wrong. Regenerate with **Contents: Read** on `fkerkinni1/claude-pac` only.
