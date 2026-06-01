@@ -1,0 +1,180 @@
+# NxtCode public release workflow.
+#
+# Builds, signs, and notarizes the NxtCode macOS pkg from the PRIVATE source
+# repo (nxtranet/myRemoteAI) and publishes it as a GitHub Release on THIS
+# public repo (nxtranet/nxtcode-releases).
+#
+# Triggers:
+#   - push of a tag matching v*.*.*
+#   - manual workflow_dispatch with a "version" input (e.g. v0.1.58)
+#
+# Required secrets are documented in SETUP.md at the repo root.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v0.1.58)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout public releases repo
+        uses: actions/checkout@v4
+
+      - name: Resolve and validate VERSION
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION '$VERSION' does not match ^v[0-9]+\.[0-9]+\.[0-9]+$"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Resolved VERSION=$VERSION"
+
+      # Source repo tags may not be kept in sync with this public repo's tags,
+      # so we default to the source repo's default branch. To pin to a matching
+      # tag, add `ref: ${{ env.VERSION }}` below.
+      - name: Checkout private source repo
+        uses: actions/checkout@v4
+        with:
+          repository: nxtranet/myRemoteAI
+          token: ${{ secrets.SOURCE_REPO_PAT }}
+          path: source
+          fetch-depth: 1
+
+      # The build needs BOTH Developer ID certs:
+      #   - Developer ID Application: codesigns the .app via xcodebuild
+      #   - Developer ID Installer:   signs the outer .pkg via productsign
+      # Both .p12s are base64-encoded in secrets and imported into a temp keychain
+      # that gets deleted at the end of the job.
+      - name: Create temp keychain and import Developer ID certs
+        shell: bash
+        run: |
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          echo "${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}" | base64 --decode > /tmp/application.p12
+          echo "${{ secrets.DEVELOPER_ID_INSTALLER_P12 }}"   | base64 --decode > /tmp/installer.p12
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+
+          security import /tmp/application.p12 \
+            -P "${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security import /tmp/installer.p12 \
+            -P "${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          rm -f /tmp/application.p12 /tmp/installer.p12
+
+          # Sanity: both identities should be visible to codesign/productsign.
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" || {
+            echo "::error::Developer ID Application identity not imported"
+            exit 1
+          }
+          security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" || {
+            echo "::error::Developer ID Installer identity not imported"
+            exit 1
+          }
+
+      - name: Store notarytool credentials in keychain
+        shell: bash
+        run: |
+          xcrun notarytool store-credentials "notarytool-claudepac" \
+            --apple-id "${{ secrets.APPLE_ID_EMAIL }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+            --keychain "$KEYCHAIN_PATH"
+
+      - name: Build and notarize pkg
+        shell: bash
+        working-directory: source
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID_EMAIL }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          NOTARY_PROFILE: notarytool-claudepac
+          VERSION: ${{ env.VERSION }}
+        run: |
+          chmod +x ./desktop/installer/build-pkg.sh
+          ./desktop/installer/build-pkg.sh --notarize
+
+      - name: Locate and stage pkg artifact
+        shell: bash
+        run: |
+          PKG=$(ls -t source/desktop/dist/NxtCode-*.pkg | head -1)
+          if [ -z "$PKG" ] || [ ! -f "$PKG" ]; then
+            echo "::error::No pkg found at source/desktop/dist/NxtCode-*.pkg"
+            exit 1
+          fi
+          cp "$PKG" "${{ github.workspace }}/NxtCode.pkg"
+          echo "Built: $PKG"
+          echo "Size: $(du -h "${{ github.workspace }}/NxtCode.pkg" | cut -f1)"
+
+      - name: Verify notarization and signature
+        shell: bash
+        run: |
+          spctl --assess --type install -vv "${{ github.workspace }}/NxtCode.pkg"
+          pkgutil --check-signature "${{ github.workspace }}/NxtCode.pkg" | head -20
+
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_PAT || github.token }}
+        run: |
+          cd "${{ github.workspace }}"
+          if gh release view "$VERSION" --repo nxtranet/nxtcode-releases >/dev/null 2>&1; then
+            gh release upload "$VERSION" NxtCode.pkg install.sh \
+              --repo nxtranet/nxtcode-releases --clobber
+          else
+            gh release create "$VERSION" NxtCode.pkg install.sh \
+              --repo nxtranet/nxtcode-releases \
+              --title "NxtCode $VERSION" \
+              --notes "NxtCode ${VERSION} for macOS — universal (Apple Silicon + Intel).
+
+          Install:
+          \`\`\`
+          curl -fsSL https://mobilecoder.app/nxtcode/install.sh | bash
+          \`\`\`
+
+          Or download NxtCode.pkg directly and double-click.
+
+          Full guide: https://mobilecoder.app/nxtcode"
+          fi
+
+      - name: Cleanup keychain
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi

@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Credentials — never commit these by accident
+*.p12
+*.pem
+*.cer
+*.mobileprovision
+AuthKey_*.p8
+.env
+.env.local
+
+# Local test artifacts
+*.pkg
+/dist/
+/tmp/
