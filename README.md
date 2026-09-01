@@ -1,12 +1,12 @@
-# NxtCode for Mac
+# NxtCode for Mac & Windows
 
-> Signed, notarized macOS .pkg releases of the NxtCode wrapper. Source is closed-beta; this repo exists so the install URL is stable and auditable.
+> Signed, notarized macOS .pkg releases and the Windows zip of the NxtCode wrapper. Source is closed; this repo exists so the install URLs are stable and auditable.
 
 ## What is NxtCode?
 
-NxtCode mirrors your terminal-based AI coding sessions (Claude Code, Codex CLI, Grok CLI) from your Mac to your iPhone in real time. When the agent pauses for input, your phone pings — tap to respond, keep it moving from anywhere. Full overview: <https://mobilecoder.app/nxtcode>.
+NxtCode mirrors your terminal-based AI coding sessions (Claude Code, Codex CLI, Grok CLI) from your Mac or Windows PC to your iPhone in real time. When the agent pauses for input, your phone pings — tap to respond, keep it moving from anywhere. Full overview: <https://mobilecoder.app/nxtcode>.
 
-## Install
+## Install (macOS)
 
 One-line install:
 
@@ -24,7 +24,28 @@ After install, in any terminal:
 nxtcode claude     # or: nxtcode codex / nxtcode grok
 ```
 
-Open the **NxtCode** app on iPhone → **Pair with your Mac** → scan the QR.
+Open the **NxtCode** app on iPhone → **Pair** → scan the QR.
+
+## Install (Windows)
+
+One-line install, in PowerShell or Windows Terminal (no admin rights needed):
+
+```powershell
+irm https://mobilecoder.app/nxtcode/install.ps1 | iex
+```
+
+Or download the zip directly, extract it, and run `powershell -ExecutionPolicy Bypass -File .\install.ps1`:
+
+<https://github.com/nxtranet/nxtcode-releases/releases/latest/download/NxtCode-Windows.zip>
+
+Then, in two terminals:
+
+```powershell
+nxtcode-mirror     # terminal 1: relay + tunnel, leave running
+nxtcode claude     # terminal 2: prints the QR — scan it with the iPhone app
+```
+
+Windows 10 (1809+) / 11, x64 or ARM64. Needs Node.js 20+ (the installer offers to install it via winget) and Claude Code (`npm install -g @anthropic-ai/claude-code`). The zip is not code-signed; verify its SHA-256 against `NxtCode-Windows.zip.sha256` on the release page.
 
 ## Verify the binary
 
@@ -47,9 +68,17 @@ pkgutil --check-signature NxtCode.pkg | head
 
 ## Uninstall
 
+macOS:
+
 ```bash
 sudo rm /usr/local/bin/nxtcode
 rm -rf ~/.config/nxtcode
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\NxtCode\uninstall.ps1"
 ```
 
 ## Issues
@@ -58,4 +87,4 @@ Bug reports and feature requests: <https://github.com/nxtranet/nxtcode-releases/
 
 ## License
 
-The .pkg binaries are proprietary — All Rights Reserved. The installer script (`install.sh`) and the CI workflow (`.github/workflows/release.yml`) are MIT licensed. See [LICENSE](./LICENSE).
+The .pkg and zip binaries are proprietary — All Rights Reserved. The installer scripts (`install.sh`, `install.ps1`) and the CI workflow (`.github/workflows/release.yml`) are MIT licensed. See [LICENSE](./LICENSE).

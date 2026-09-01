@@ -157,6 +157,21 @@ jobs:
           spctl --assess --type install -vv "${{ github.workspace }}/NxtCode.pkg"
           pkgutil --check-signature "${{ github.workspace }}/NxtCode.pkg" | head -20
 
+      # Windows build: pure Node + node-pty's prebuilt win32 binaries, so it is
+      # produced on this same macOS runner by windows/build-zip.sh. Version
+      # follows the release tag (minus the leading "v").
+      - name: Build Windows zip
+        shell: bash
+        working-directory: source
+        run: |
+          (cd mac && npm ci --omit=dev)
+          (cd relay && npm ci --omit=dev)
+          chmod +x ./windows/build-zip.sh
+          VERSION="${VERSION#v}" ./windows/build-zip.sh
+          cp dist/NxtCode-Windows.zip "${{ github.workspace }}/NxtCode-Windows.zip"
+          cp dist/NxtCode-Windows.zip.sha256 "${{ github.workspace }}/NxtCode-Windows.zip.sha256"
+          echo "Size: $(du -h "${{ github.workspace }}/NxtCode-Windows.zip" | cut -f1)"
+
       - name: Create or update GitHub release
         shell: bash
         env:
@@ -164,22 +179,27 @@ jobs:
         run: |
           cd "${{ github.workspace }}"
           if gh release view "$VERSION" --repo nxtranet/nxtcode-releases >/dev/null 2>&1; then
-            gh release upload "$VERSION" NxtCode.pkg install.sh \
+            gh release upload "$VERSION" NxtCode.pkg install.sh NxtCode-Windows.zip NxtCode-Windows.zip.sha256 install.ps1 \
               --repo nxtranet/nxtcode-releases --clobber
           else
-            gh release create "$VERSION" NxtCode.pkg install.sh \
+            gh release create "$VERSION" NxtCode.pkg install.sh NxtCode-Windows.zip NxtCode-Windows.zip.sha256 install.ps1 \
               --repo nxtranet/nxtcode-releases \
               --title "NxtCode $VERSION" \
-              --notes "NxtCode ${VERSION} for macOS — universal (Apple Silicon + Intel).
+              --notes "NxtCode ${VERSION} for macOS (universal, notarized) and Windows 10/11 (x64 + ARM64).
 
-          Install:
+          macOS:
           \`\`\`
           curl -fsSL https://mobilecoder.app/nxtcode/install.sh | bash
           \`\`\`
 
-          Or download NxtCode.pkg directly and double-click.
+          Windows (PowerShell):
+          \`\`\`
+          irm https://mobilecoder.app/nxtcode/install.ps1 | iex
+          \`\`\`
 
-          Full guide: https://mobilecoder.app/nxtcode"
+          Or download NxtCode.pkg / NxtCode-Windows.zip directly.
+
+          Full guide: https://mobilecoder.app/#install"
           fi
 
       - name: Cleanup keychain
